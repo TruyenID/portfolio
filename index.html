@@ -180,6 +180,10 @@ button{font:inherit}
    arrived, so a blocked CDN or a browser without modules keeps the constellation
    rather than an empty hero. Both share .hero__field, so the print and noscript
    rules below already cover the new canvas too. */
+/* Pinning the rail makes the hero roughly a screen taller than it looks, and
+   the field is inset:0 against it — cap it so the backdrop stays one screen
+   instead of stretching down through the pinned block. */
+.hero__field{max-height:100vh; bottom:auto}
 .hero__field--gl{opacity:0}
 .hero.is-gl .hero__field--gl{opacity:1; transition:opacity .8s ease}
 .hero.is-gl #field{opacity:0; transition:opacity .8s ease}
@@ -368,7 +372,10 @@ button{font:inherit}
 @property --fy{syntax:'<length>'; inherits:false; initial-value:0px}
 
 .hero,.sec{perspective:1500px; perspective-origin:50% 45%}
-.hero > .shell,.sec > .shell{transform-style:preserve-3d; will-change:transform;
+/* The hero shell stays flat on purpose: the rail inside it pins while its
+   tickets scrub in, and a block that holds still must not also be tilting.
+   The hero gets its depth from the WebGL field and the card tilts instead. */
+.sec > .shell{transform-style:preserve-3d; will-change:transform;
   transform:rotateX(var(--srx,0deg)) translateZ(var(--stz,0px))}
 
 .rise,.tk,.tkt,.job,.skill,.fact,.fig,.chip,.shot{
@@ -415,9 +422,14 @@ button{font:inherit}
 .tk__at{transition:color .5s var(--ease)}
 .tk--now  .tk__at{color:var(--mint)}
 .tk--done .tk__at{color:var(--muted)}
-/* the runner stutters like a ticket printer rather than gliding */
+/* Every line the order has already crossed keeps its runner going, so the rail
+   reads as one moving chain from the first ticket to the last instead of a
+   single lit segment. Tying the runner to .tk--now alone put it out entirely at
+   the end of the scrub, because the last station has no connector — nothing
+   follows payment. The runner stutters in steps, like a ticket printer. */
 .gsap-on .flow.in .tk__link::after{animation:none}
-.gsap-on .tk--now .tk__link::after{animation:run 1.15s steps(22) infinite}
+.gsap-on .tk--done .tk__link::after,
+.gsap-on .tk--now  .tk__link::after{animation:run 1.15s steps(22) infinite}
 
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
@@ -1076,7 +1088,7 @@ button{font:inherit}
      only 3D a touch reader ever gets. Only plates currently on screen are
      measured, and all of it collapses into one frame via rAF, so scrolling
      never pays for a layout read per event. */
-  var plates = [].slice.call(document.querySelectorAll('.hero > .shell, .sec > .shell'));
+  var plates = [].slice.call(document.querySelectorAll('.sec > .shell'));
   if (!reduce && plates.length) {
     var onscreen = plates.slice(), depthRaf = 0;
 
@@ -1495,23 +1507,54 @@ button{font:inherit}
       /* If the reader already reached the rail before GSAP landed, the reveal
          has run — take over the staging only, never re-hide what they can see. */
       var fresh = !flow.classList.contains('in');
+      var STEP = 0.85;                       /* one station per STEP of timeline */
+
+      /* A station is live from the moment its ticket lands until the next one
+         does, and its outgoing line draws in between. */
+      function mark(t) {
+        var live = 0;
+        for (var i = 0; i < tks.length; i++) if (t >= i * STEP) live = i;
+        tks.forEach(function (tk, i) {
+          tk.classList.toggle('tk--now',  i === live);
+          tk.classList.toggle('tk--done', i <  live);
+        });
+      }
 
       if (fresh) {
+        /* The rail holds still and the wheel walks the order through it, one
+           station at a time. Without the pin the whole chain went past in a
+           single flick and there was nothing to read.
+
+           pinType 'transform' is not optional here: the rail sits inside the
+           hero, and .hero carries a perspective, which makes it a containing
+           block for fixed-position descendants. A default fixed pin would be
+           positioned against the hero instead of the viewport and drift. */
+        var rail = flow.parentNode;
         var tl = g.timeline({
-          scrollTrigger: { trigger: flow, start: 'top 84%', end: 'bottom 64%', scrub: 0.55 }
+          scrollTrigger: {
+            trigger: rail,
+            start: 'center center',
+            end: '+=' + (tks.length * 260),
+            scrub: 0.6,
+            pin: true,
+            pinType: 'transform',
+            anticipatePin: 1,
+            invalidateOnRefresh: true
+          },
+          onUpdate: function () { mark(tl.time()); }
         });
         tks.forEach(function (tk, i) {
           g.set(tk, { opacity: 0, '--ty': '26px', '--tz': '-90px', '--rx': '-16deg' });
           tl.to(tk, {
             opacity: 1, '--ty': '0px', '--tz': '0px', '--rx': '0deg',
             duration: 0.8, ease: 'power3.out'
-          }, i * 0.85);
+          }, i * STEP);
 
           var link = tk.querySelector('.tk__link');
           if (link) {
             g.set(link, { scaleX: 0 });
             /* linear, because a service line is drawn by the clock, not eased */
-            tl.to(link, { scaleX: 1, duration: 0.55, ease: 'none' }, i * 0.85 + 0.55);
+            tl.to(link, { scaleX: 1, duration: 0.55, ease: 'none' }, i * STEP + 0.55);
           }
         });
 
@@ -1534,22 +1577,12 @@ button{font:inherit}
         }, 2500);
       }
 
-      /* Which station is live is read straight off scroll progress, so the
-         mint/muted states stay correct scrubbing backwards as well as forwards. */
-      ST.create({
-        trigger: flow, start: 'top 84%', end: 'bottom 64%',
-        onUpdate: function (self) {
-          var live = Math.floor(self.progress * tks.length);
-          if (live > tks.length - 1) live = tks.length - 1;
-          tks.forEach(function (tk, i) {
-            tk.classList.toggle('tk--now',  i === live);
-            tk.classList.toggle('tk--done', i <  live);
-          });
-        },
-        onLeaveBack: function () {
-          tks.forEach(function (tk) { tk.classList.remove('tk--now', 'tk--done'); });
-        }
-      });
+      /* Stations read off the timeline's own clock. Deriving them from raw
+         scroll progress instead meant two clocks that disagreed: a station lit
+         up mint while its connector, scheduled STEP*i + 0.55 into the timeline,
+         had not started drawing yet. One clock, no drift, and it stays correct
+         scrubbing backwards as well as forwards. */
+      if (!fresh) tks.forEach(function (tk) { tk.classList.add('tk--done'); });
 
       /* web3d integration: the hero field answers the same scrollbar */
       if (field3d && field3d.depth) {
