@@ -28,7 +28,9 @@
    ══════════════════════════════════════════════════════════════════════════ */
 :root{
   --bg:#F1F0EC; --bg-2:#E8E7E1; --panel:#FCFCFA; --panel-hi:#FFFFFF;
-  --ink:#14171A; --text:#3B4246; --muted:#697077;
+  /* --muted was #697077 — 4.40:1 on --bg, a hair under WCAG AA for body text.
+     Darkened just enough to clear 4.5 (now 4.74:1) without shifting the grey. */
+  --ink:#14171A; --text:#3B4246; --muted:#646B71;
   --line:#DBD8D0; --line-soft:#E7E5DE;
   --ember:#9E5804; --ember-soft:rgba(158,88,4,.10);
   --mint:#136A48;
@@ -174,6 +176,13 @@ button{font:inherit}
 .hero__field{position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none;
   -webkit-mask-image:linear-gradient(to bottom,#000 0,#000 55%,transparent 92%);
   mask-image:linear-gradient(to bottom,#000 0,#000 55%,transparent 92%)}
+/* The WebGL layer sits on the 2D one and only fades in once three.js has really
+   arrived, so a blocked CDN or a browser without modules keeps the constellation
+   rather than an empty hero. Both share .hero__field, so the print and noscript
+   rules below already cover the new canvas too. */
+.hero__field--gl{opacity:0}
+.hero.is-gl .hero__field--gl{opacity:1; transition:opacity .8s ease}
+.hero.is-gl #field{opacity:0; transition:opacity .8s ease}
 .hero .shell{position:relative; z-index:1}
 .hero__in{display:grid; grid-template-columns:1fr 260px; gap:var(--s-4); align-items:start}
 
@@ -220,7 +229,7 @@ button{font:inherit}
 .tk::before{content:""; position:absolute; left:0; right:0; top:0; height:7px;
   background:radial-gradient(circle at 6px 0, var(--bg) 3.4px, transparent 3.6px) repeat-x;
   background-size:12px 7px}
-.tk:hover{transform:translateY(-4px); box-shadow:var(--shadow-lift)}
+.tk:hover{box-shadow:var(--shadow-lift)}   /* lift lives in the 3D stage block */
 /* connector: line grows, then a pulse runs the length of it */
 .tk__link{position:absolute; left:100%; top:50%; width:2.6rem; height:1px;
   background:var(--ember); transform:scaleX(0); transform-origin:left}
@@ -270,7 +279,7 @@ button{font:inherit}
 /* work — each project is its own ticket */
 .jobs{display:grid; gap:var(--s-2)}
 .job{transition:transform .45s var(--ease-out), box-shadow .45s var(--ease-out)}
-.job:hover{transform:translateY(-3px); box-shadow:var(--shadow-lift)}
+.job:hover{box-shadow:var(--shadow-lift)}  /* lift lives in the 3D stage block */
 .job__top{display:flex; flex-wrap:wrap; align-items:center; gap:.75rem 1.4rem;
   padding-bottom:1.05rem; margin-bottom:1.2rem; border-bottom:1px solid var(--line-soft)}
 .state{font-family:var(--mono); font-size:.625rem; letter-spacing:.12em; text-transform:uppercase;
@@ -330,14 +339,16 @@ button{font:inherit}
 .cur-on.cur-hot .cur-dot{opacity:0}
 
 /* ══ MOTION ════════════════════════════════════════════════════════════════ */
-.rise{opacity:0; transform:translateY(16px)}
-.rise.in{opacity:1; transform:none;
-  transition:opacity .7s var(--ease) calc(var(--i,0)*90ms),
-             transform .7s var(--ease-out) calc(var(--i,0)*90ms)}
-.tk{opacity:0; transform:translateY(14px)}
-.flow.in .tk{opacity:1; transform:none;
+/* Reveals now set variables rather than a transform of their own, so the 3D
+   stage below can fold them together with pointer tilt and scroll depth. */
+.rise{opacity:0; --ty:24px; --tz:-90px; --rx:-12deg}
+.rise.in{opacity:1; --ty:0px; --tz:0px; --rx:0deg;
+  transition:opacity .8s var(--ease) calc(var(--i,0)*90ms),
+             transform .95s var(--ease-out) calc(var(--i,0)*90ms)}
+.tk{opacity:0; --ty:18px; --tz:-70px; --rx:-15deg}
+.flow.in .tk{opacity:1; --ty:0px; --tz:0px; --rx:0deg;
   transition:opacity .55s var(--ease) calc(var(--i)*140ms),
-             transform .55s var(--ease-out) calc(var(--i)*140ms)}
+             transform .75s var(--ease-out) calc(var(--i)*140ms)}
 .flow.in .tk__link{transform:scaleX(1);
   transition:transform .4s var(--ease) calc(var(--i)*140ms + 260ms)}
 .flow.in .tk__link::after{
@@ -345,9 +356,77 @@ button{font:inherit}
 @keyframes run{0%{opacity:0; transform:translateX(0)}
   12%{opacity:1} 78%{opacity:1} 100%{opacity:0; transform:translateX(2.6rem)}}
 
+/* ══ 3D STAGE ═══════════════════════════════════════════════════════════════
+   The whole page becomes one perspective space. Every animated surface builds
+   its transform from named variables, so a reveal (--ty/--tz/--rx), a pointer
+   tilt (--trx/--try), a hover lift and the scroll-driven depth (--srx) all
+   drive the same element without any of them clobbering the others.
+
+   The content itself stays ordinary DOM — selectable, screen-reader readable,
+   indexable. Only transforms carry the depth, so nothing here costs the CV its
+   legibility, and the reduced-motion block underneath flattens all of it. */
+@property --fy{syntax:'<length>'; inherits:false; initial-value:0px}
+
+.hero,.sec{perspective:1500px; perspective-origin:50% 45%}
+.hero > .shell,.sec > .shell{transform-style:preserve-3d; will-change:transform;
+  transform:rotateX(var(--srx,0deg)) translateZ(var(--stz,0px))}
+
+.rise,.tk,.tkt,.job,.skill,.fact,.fig,.chip,.shot{
+  transform-style:preserve-3d;
+  transform:perspective(var(--persp,1200px))
+    translate3d(0,calc(var(--ty,0px) + var(--fy,0px)),var(--tz,0px))
+    rotateX(calc(var(--rx,0deg) + var(--trx,0deg)))
+    rotateY(var(--try,0deg))}
+
+/* pointer tilt needs to track the cursor, so the settle transition is dropped
+   while a card is actively being tilted and restored the moment it is left */
+.tkt,.job,.tk,.skill,.fact,.fig{
+  transition:transform .45s var(--ease-out), box-shadow .45s var(--ease-out)}
+.tilting{transition:box-shadow .45s var(--ease-out) !important}
+.tkt:hover,.job:hover,.tk:hover,.tilting{box-shadow:var(--shadow-lift)}
+
+/* Every card also carries .rise, and .rise.in resets --ty/--tz further up the
+   sheet, so the hover lift has to out-specify it rather than merely follow it. */
+.rise.in.tkt:hover,.tkt:hover{--ty:-3px; --tz:26px}
+.flow.in .tk:hover{--ty:-4px; --tz:30px}
+
+.skill:hover{--tz:18px}
+.fact:hover{--tz:16px}
+.fig:hover{--tz:14px}
+.chip{transition:transform .32s var(--ease-out), color .2s, border-color .2s, background .2s}
+.chip:hover{--tz:22px; --try:-5deg}
+
+/* a slow idle drift, kept to the hero pieces so the page reads as alive
+   without thirty elements recomputing style forever */
+.shot,.tk{animation:drift3d 7.5s var(--ease) infinite alternate;
+  animation-delay:calc(var(--i,0)*-1100ms)}
+@keyframes drift3d{from{--fy:-3px} to{--fy:3px}}
+
+/* ══ SERVICE RAIL, SCRUBBED ═════════════════════════════════════════════════
+   Once ScrollTrigger is up the rail stops being a one-shot reveal and becomes
+   the order itself moving down the pass: scrolling walks the ticket from
+   station to station. Each station borrows the vocabulary the job list already
+   speaks — mint while it is the live station, muted once it is served — so the
+   new motion says the same thing the page was already saying.
+
+   .gsap-on only lands if the library actually arrived, so a blocked CDN keeps
+   the hand-written reveal underneath exactly as it was. */
+.gsap-on .flow .tk{animation:none; transition:box-shadow .4s var(--ease-out)}
+.tk__at{transition:color .5s var(--ease)}
+.tk--now  .tk__at{color:var(--mint)}
+.tk--done .tk__at{color:var(--muted)}
+/* the runner stutters like a ticket printer rather than gliding */
+.gsap-on .flow.in .tk__link::after{animation:none}
+.gsap-on .tk--now .tk__link::after{animation:run 1.15s steps(22) infinite}
+
 @media (prefers-reduced-motion:reduce){
   html{scroll-behavior:auto}
   .rise,.tk{opacity:1; transform:none}
+  /* the 3D stage collapses entirely — no perspective, no tilt, no drift */
+  .hero,.sec{perspective:none}
+  .hero > .shell,.sec > .shell,
+  .tkt,.job,.skill,.fact,.fig,.chip,.shot{transform:none !important}
+  .shot,.tk{animation:none}
   .tk__link{transform:scaleX(1)}
   .tk__link::after,.open i{animation:none}
   .name span > i{transform:none}
@@ -452,6 +531,11 @@ button{font:inherit}
   .tkt,.tk{box-shadow:none; border:1px solid var(--line-soft)}
   .tkt::before,.tk::before,.tk__link{display:none}
   .rise,.tk{opacity:1 !important; transform:none !important}
+  /* a PDF must be flat — kill the whole 3D stage, not just the reveals */
+  .hero,.sec{perspective:none !important}
+  .hero > .shell,.sec > .shell,
+  .tkt,.job,.skill,.fact,.fig,.chip,.shot{transform:none !important}
+  .shot,.tk{animation:none !important}
   /* keep the portrait beside the text and the rail on one row — paper is scarce */
   .hero__in{grid-template-columns:1fr 165px !important; gap:1.5rem !important}
   .shot{max-width:none !important; padding:.4rem .4rem 0}
@@ -504,6 +588,7 @@ button{font:inherit}
   <!-- ══ HERO ══════════════════════════════════════════════════════════════ -->
   <section class="hero">
     <canvas class="hero__field" id="field" aria-hidden="true"></canvas>
+    <canvas class="hero__field hero__field--gl" id="field3d" aria-hidden="true"></canvas>
     <div class="shell">
       <div class="hero__in">
         <div>
@@ -810,6 +895,7 @@ button{font:inherit}
     root.setAttribute('data-theme', next);
     store('lvt-theme', next);
     if (field) field.recolor();
+    if (field3d) field3d.recolor();
   });
 
   /* ── LANGUAGE ───────────────────────────────────────────────────────────
@@ -984,7 +1070,49 @@ button{font:inherit}
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 
-  /* ── POINTER: cursor, portrait tilt, magnetic CTA (fine pointers only) ─ */
+  /* ── SCROLL DEPTH ───────────────────────────────────────────────────────
+     Each section's content plate tips as it crosses the viewport, so the page
+     keeps its depth while scrolling and not only under a cursor — which is the
+     only 3D a touch reader ever gets. Only plates currently on screen are
+     measured, and all of it collapses into one frame via rAF, so scrolling
+     never pays for a layout read per event. */
+  var plates = [].slice.call(document.querySelectorAll('.hero > .shell, .sec > .shell'));
+  if (!reduce && plates.length) {
+    var onscreen = plates.slice(), depthRaf = 0;
+
+    var schedule = function () {
+      if (!depthRaf) depthRaf = requestAnimationFrame(function () {
+        depthRaf = 0;
+        var vh = window.innerHeight || 1;
+        for (var i = 0; i < onscreen.length; i++) {
+          var el = onscreen[i], r = el.getBoundingClientRect();
+          var p = ((r.top + r.height / 2) - vh / 2) / vh;   /* −1 above … +1 below */
+          p = p < -1 ? -1 : p > 1 ? 1 : p;
+          el.style.setProperty('--srx', (p * 4.5).toFixed(2) + 'deg');
+          el.style.setProperty('--stz', (-Math.abs(p) * 70).toFixed(1) + 'px');
+        }
+      });
+    };
+
+    if ('IntersectionObserver' in window) {
+      onscreen = [];
+      var pio = new IntersectionObserver(function (es) {
+        es.forEach(function (e) {
+          var i = onscreen.indexOf(e.target);
+          if (e.isIntersecting) { if (i < 0) onscreen.push(e.target); }
+          else if (i >= 0) onscreen.splice(i, 1);
+        });
+        schedule();
+      }, { rootMargin: '25% 0px 25% 0px' });
+      plates.forEach(function (p) { pio.observe(p); });
+    }
+
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule, { passive: true });
+    schedule();
+  }
+
+  /* ── POINTER: cursor, card tilt, magnetic CTA (fine pointers only) ────── */
   if (fine && !reduce) {
     var ring = document.querySelector('.cur');
     var dot = document.querySelector('.cur-dot');
@@ -1010,18 +1138,47 @@ button{font:inherit}
       el.addEventListener('mouseleave', function () { body.classList.remove('cur-hot'); });
     });
 
-    /* portrait tilt */
-    var shot = document.getElementById('shot');
-    var wrap = shot.parentNode;
-    wrap.addEventListener('mousemove', function (e) {
-      var r = shot.getBoundingClientRect();
-      var px = (e.clientX - r.left) / r.width - 0.5;
-      var py = (e.clientY - r.top) / r.height - 0.5;
-      shot.style.transform =
-        'rotateY(' + (px * 7).toFixed(2) + 'deg) rotateX(' + (-py * 7).toFixed(2) +
-        'deg) translateZ(0)';
-    });
-    wrap.addEventListener('mouseleave', function () { shot.style.transform = ''; });
+    /* ── POINTER TILT ───────────────────────────────────────────────────────
+       What used to tilt only the portrait now drives every card. A single
+       delegated listener finds the card under the cursor; that card takes
+       .tilting, which drops its settle transition so it tracks the pointer
+       instead of lagging a beat behind, and gives it back on the way out.
+       .tkt covers the portrait, the panels and each job, so the whole page
+       answers the cursor with one rule. */
+    var TILTABLE = '.tkt, .tk';
+    var held = null, tiltRaf = 0, tiltX = 0, tiltY = 0;
+
+    function releaseTilt(el) {
+      if (!el) return;
+      el.classList.remove('tilting');
+      el.style.removeProperty('--trx');
+      el.style.removeProperty('--try');
+    }
+    function applyTilt() {
+      tiltRaf = 0;
+      if (!held) return;
+      var r = held.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      var px = (tiltX - r.left) / r.width  - 0.5;
+      var py = (tiltY - r.top)  / r.height - 0.5;
+      var amp = held.id === 'shot' ? 9 : 5;
+      held.style.setProperty('--try', (px * amp).toFixed(2) + 'deg');
+      held.style.setProperty('--trx', (-py * amp).toFixed(2) + 'deg');
+    }
+    document.addEventListener('pointermove', function (e) {
+      if (e.pointerType && e.pointerType !== 'mouse') return;
+      var hit = e.target && e.target.closest ? e.target.closest(TILTABLE) : null;
+      if (hit !== held) {
+        releaseTilt(held);
+        held = hit;
+        if (held) held.classList.add('tilting');
+      }
+      if (!held) return;
+      tiltX = e.clientX; tiltY = e.clientY;
+      if (!tiltRaf) tiltRaf = requestAnimationFrame(applyTilt);
+    }, { passive: true });
+
+    window.addEventListener('blur', function () { releaseTilt(held); held = null; });
 
     /* magnetic CTA */
     var cta = document.getElementById('cta');
@@ -1094,7 +1251,8 @@ button{font:inherit}
       draw();
       raf = requestAnimationFrame(step);
     }
-    function start() { if (!live && !reduce) { live = true; raf = requestAnimationFrame(step); } }
+    var retired = false;                        /* set once WebGL takes over */
+    function start() { if (!live && !reduce && !retired) { live = true; raf = requestAnimationFrame(step); } }
     function stop() { live = false; cancelAnimationFrame(raf); }
 
     readColor(); size(); draw();
@@ -1114,7 +1272,301 @@ button{font:inherit}
       rt = setTimeout(function () { size(); draw(); }, 180);
     }, { passive: true });
 
-    return { recolor: function () { readColor(); draw(); } };
+    return {
+      recolor: function () { readColor(); draw(); },
+      retire:  function () { retired = true; stop(); }
+    };
+  })();
+
+  /* ── HERO WEBGL FIELD ─────────────────────────────────────────────────────
+     A three.js layer laid over the 2D constellation. It is strictly additive:
+     three.js is fetched as an ES module from a CDN, and every failure path —
+     no WebGL, no module support, offline, reduced motion — simply leaves the
+     canvas above untouched. One InstancedMesh draws the whole grid in a single
+     call, and every colour is pulled from the same tokens the rest of the page
+     reads, so the theme toggle moves both layers at once. */
+  var field3d = (function () {
+    var cvs  = document.getElementById('field3d');
+    var hero = document.querySelector('.hero');
+    if (!cvs || !hero || reduce) return null;
+
+    try {                                     /* cheap capability probe */
+      var probe = document.createElement('canvas');
+      if (!(probe.getContext('webgl2') || probe.getContext('webgl'))) return null;
+    } catch (e) { return null; }
+
+    var GRID = 40, COUNT = GRID * GRID, SPACING = 0.72;
+    var HALF = (GRID - 1) / 2, MAXD = Math.hypot(HALF, HALF);
+
+    var T = null, renderer, scene, camera, mesh, key, fill, dummy, tmp;
+    var raf = 0, live = false, ready = false, seen = true, t0 = 0;
+    var pxz = new Float32Array(COUNT * 2), pdist = new Float32Array(COUNT);
+    var mx = 0, my = 0, tx = 0, ty = 0;
+
+    function token(name, fallback) {
+      var v = getComputedStyle(root).getPropertyValue(name).trim();
+      return v || fallback;
+    }
+
+    function paint() {
+      if (!ready) return;
+      var cEmber = new T.Color(token('--ember', '#F5A544'));
+      var cCool  = new T.Color(token('--cool',  '#96A5FF'));
+      var cMint  = new T.Color(token('--mint',  '#63D6A0'));
+      for (var i = 0; i < COUNT; i++) {
+        var d = pdist[i];
+        tmp.copy(cMint)
+           .lerp(cCool,  Math.min(d * 1.7, 1))
+           .lerp(cEmber, Math.max(0, d * 1.5 - 0.52));
+        mesh.setColorAt(i, tmp);
+      }
+      mesh.instanceColor.needsUpdate = true;
+      key.color.copy(cEmber);
+      fill.color.copy(cCool);
+      /* fog matches the page ground so the far rows dissolve instead of ending */
+      scene.fog.color.set(token('--bg', '#0A0B0D'));
+    }
+
+    function size() {
+      var r = cvs.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      camera.aspect = r.width / r.height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(r.width, r.height, false);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    }
+
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      if (!t0) t0 = now;
+      var t = (now - t0) / 1000;
+
+      for (var i = 0; i < COUNT; i++) {
+        var x = pxz[i * 2], z = pxz[i * 2 + 1], d = pdist[i];
+        var y = Math.sin(d * 7.5 - t * 1.15) * 1.15 * (1 - d * 0.45)
+              + Math.sin(x * 0.28 + t * 0.6) * 0.32;
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(y * 0.32, t * 0.14 + d, y * 0.24);
+        dummy.scale.setScalar(0.62 + (y + 1.5) * 0.13);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+
+      tx += (mx - tx) * 0.045;
+      ty += (my - ty) * 0.045;
+      camera.position.x = tx * 2.6;
+      camera.position.y = 11.5 + ty * 1.4;
+      camera.lookAt(0, 0, 0);
+
+      renderer.render(scene, camera);
+    }
+
+    function start() { if (ready && !live && seen && !document.hidden) { live = true; t0 = 0; raf = requestAnimationFrame(frame); } }
+    function stop()  { live = false; cancelAnimationFrame(raf); }
+
+    function boot(THREE) {
+      T = THREE;
+      renderer = new T.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true, powerPreference: 'low-power' });
+      renderer.setClearAlpha(0);
+
+      scene  = new T.Scene();
+      scene.fog = new T.Fog(0x000000, 20, 46);
+      camera = new T.PerspectiveCamera(46, 1, 0.1, 120);
+      camera.position.set(0, 11.5, 21);
+
+      scene.add(new T.AmbientLight(0xffffff, 0.55));
+      key  = new T.DirectionalLight(0xffffff, 2.1); key.position.set(9, 18, 8);   scene.add(key);
+      fill = new T.DirectionalLight(0xffffff, 1.0); fill.position.set(-11, 7, 6); scene.add(fill);
+
+      /* one geometry + one material + one InstancedMesh = one draw call */
+      mesh = new T.InstancedMesh(
+        new T.BoxGeometry(0.34, 0.34, 0.34),
+        new T.MeshStandardMaterial({ roughness: 0.42, metalness: 0.32, transparent: true, opacity: 0.82 }),
+        COUNT
+      );
+      mesh.instanceMatrix.setUsage(T.DynamicDrawUsage);
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+
+      dummy = new T.Object3D();
+      tmp   = new T.Color();
+
+      for (var i = 0, ix = 0; ix < GRID; ix++) {
+        for (var iz = 0; iz < GRID; iz++, i++) {
+          pxz[i * 2]     = (ix - HALF) * SPACING;
+          pxz[i * 2 + 1] = (iz - HALF) * SPACING;
+          pdist[i]       = Math.hypot(ix - HALF, iz - HALF) / MAXD;
+        }
+      }
+
+      ready = true;
+      paint();
+      size();
+      hero.classList.add('is-gl');
+      if (field && field.retire) field.retire();   /* stop the 2D rAF behind us */
+
+      if ('IntersectionObserver' in window) {
+        new IntersectionObserver(function (es) {
+          seen = es[0].isIntersecting;
+          seen ? start() : stop();
+        }, { threshold: 0 }).observe(cvs);
+      } else { start(); }
+
+      document.addEventListener('visibilitychange', function () {
+        document.hidden ? stop() : start();
+      });
+
+      var rt;
+      window.addEventListener('resize', function () {
+        clearTimeout(rt);
+        rt = setTimeout(size, 180);
+      }, { passive: true });
+
+      if (fine) {
+        hero.addEventListener('pointermove', function (ev) {
+          var r = hero.getBoundingClientRect();
+          mx = ((ev.clientX - r.left) / r.width - 0.5) * 2;
+          my = ((ev.clientY - r.top) / r.height - 0.5) * 2;
+        }, { passive: true });
+      }
+
+      start();
+    }
+
+    /* Loaded through an injected module script: browsers without ES modules
+       ignore the tag outright, and the dynamic import swallows a dead CDN. */
+    window.__lvtThree = function (m) { try { boot(m); } catch (e) {} };
+    var tag = document.createElement('script');
+    tag.type = 'module';
+    tag.textContent =
+      "import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js')" +
+      ".then(function(m){ window.__lvtThree && window.__lvtThree(m); })" +
+      ".catch(function(){});";
+    document.head.appendChild(tag);
+
+    /* Driven by ScrollTrigger below: the field pulls back and thins out as the
+       hero leaves, so the WebGL answers to the page instead of looping in its
+       own world. Cheap enough to call every scroll frame — three numbers. */
+    function depth(p) {
+      if (!ready) return;
+      p = p < 0 ? 0 : p > 1 ? 1 : p;
+      camera.position.z        = 21 + p * 11;
+      mesh.rotation.y          = p * 0.4;
+      mesh.material.opacity    = 0.82 * (1 - p * 0.8);
+    }
+
+    return { recolor: paint, depth: depth };
+  })();
+
+  /* ── SCROLLTRIGGER: THE ORDER ADVANCES ────────────────────────────────────
+     The rail already told a story — one service passing through the system at
+     19:04, 19:05, 19:18, 19:46. It just told it all at once. Tying it to the
+     scrollbar lets the reader walk the order down the pass themselves, which
+     is the page's own metaphor rather than motion borrowed from somewhere.
+
+     Additive like everything else here: GSAP is fetched from a CDN, and if it
+     never lands the hand-written IntersectionObserver reveal stays in charge. */
+  (function () {
+    var flow = document.querySelector('.rail .flow');
+    if (!flow || reduce) return;
+    var tks = [].slice.call(flow.querySelectorAll('.tk'));
+    if (tks.length < 2) return;
+
+    function load(urls, done) {
+      var i = 0;
+      (function next() {
+        if (i >= urls.length) { done(); return; }
+        var s = document.createElement('script');
+        s.src = urls[i++];
+        s.async = false;                       /* order matters: core, then plugin */
+        s.onload = next;
+        s.onerror = function () {};            /* silence: the CSS reveal covers us */
+        document.head.appendChild(s);
+      })();
+    }
+
+    function boot() {
+      var g = window.gsap, ST = window.ScrollTrigger;
+      if (!g || !ST) return;
+      g.registerPlugin(ST);
+      root.classList.add('gsap-on');
+
+      /* If the reader already reached the rail before GSAP landed, the reveal
+         has run — take over the staging only, never re-hide what they can see. */
+      var fresh = !flow.classList.contains('in');
+
+      if (fresh) {
+        var tl = g.timeline({
+          scrollTrigger: { trigger: flow, start: 'top 84%', end: 'bottom 64%', scrub: 0.55 }
+        });
+        tks.forEach(function (tk, i) {
+          g.set(tk, { opacity: 0, '--ty': '26px', '--tz': '-90px', '--rx': '-16deg' });
+          tl.to(tk, {
+            opacity: 1, '--ty': '0px', '--tz': '0px', '--rx': '0deg',
+            duration: 0.8, ease: 'power3.out'
+          }, i * 0.85);
+
+          var link = tk.querySelector('.tk__link');
+          if (link) {
+            g.set(link, { scaleX: 0 });
+            /* linear, because a service line is drawn by the clock, not eased */
+            tl.to(link, { scaleX: 1, duration: 0.55, ease: 'none' }, i * 0.85 + 0.55);
+          }
+        });
+
+        /* The reveal code below keeps one rule: nothing on a CV may stay
+           invisible because something failed to deliver. GSAP writes opacity
+           inline, which outranks that CSS safety net, so the rail needs its
+           own. If a ticket is well inside the viewport and still blank a beat
+           later — ScrollTrigger mismeasured, the range never resolved — drop
+           GSAP's inline state and hand the ticket back to CSS. */
+        setTimeout(function () {
+          var vh = window.innerHeight || 0;
+          tks.forEach(function (tk) {
+            var r = tk.getBoundingClientRect();
+            if (r.top < vh * 0.7 && r.bottom > 0 &&
+                parseFloat(getComputedStyle(tk).opacity) < 0.05) {
+              g.set(tk, { clearProps: 'all' });
+              flow.classList.add('in');
+            }
+          });
+        }, 2500);
+      }
+
+      /* Which station is live is read straight off scroll progress, so the
+         mint/muted states stay correct scrubbing backwards as well as forwards. */
+      ST.create({
+        trigger: flow, start: 'top 84%', end: 'bottom 64%',
+        onUpdate: function (self) {
+          var live = Math.floor(self.progress * tks.length);
+          if (live > tks.length - 1) live = tks.length - 1;
+          tks.forEach(function (tk, i) {
+            tk.classList.toggle('tk--now',  i === live);
+            tk.classList.toggle('tk--done', i <  live);
+          });
+        },
+        onLeaveBack: function () {
+          tks.forEach(function (tk) { tk.classList.remove('tk--now', 'tk--done'); });
+        }
+      });
+
+      /* web3d integration: the hero field answers the same scrollbar */
+      if (field3d && field3d.depth) {
+        ST.create({
+          trigger: '.hero', start: 'top top', end: 'bottom top',
+          onUpdate: function (self) { field3d.depth(self.progress); }
+        });
+      }
+
+      /* the 3D stage changes element heights as it settles; let ST remeasure */
+      window.addEventListener('load', function () { ST.refresh(); });
+    }
+
+    load([
+      'https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js',
+      'https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/ScrollTrigger.min.js'
+    ], boot);
   })();
 
   if (recall('lvt-lang') === 'vi') setLang(true);
