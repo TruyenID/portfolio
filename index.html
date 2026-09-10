@@ -1481,7 +1481,8 @@ button{font:inherit}
      never lands the hand-written IntersectionObserver reveal stays in charge. */
   (function () {
     var flow = document.querySelector('.rail .flow');
-    if (!flow || reduce) return;
+    var mobile = window.matchMedia('(max-width:660px)').matches;
+    if (!flow || reduce || mobile) return;
     var tks = [].slice.call(flow.querySelectorAll('.tk'));
     if (tks.length < 2) return;
 
